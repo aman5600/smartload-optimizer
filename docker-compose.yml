@@ -1,0 +1,9 @@
+services:
+  smartload-optimizer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: smartload-optimizer:latest
+    container_name: smartload-optimizer
+    ports:
+      - "8080:8080"
