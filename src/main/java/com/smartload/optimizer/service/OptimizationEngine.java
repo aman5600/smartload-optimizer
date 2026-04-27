@@ -1,22 +1,21 @@
 package com.smartload.optimizer.service;
 
 import com.smartload.optimizer.dto.OrderDto;
+import com.smartload.optimizer.dto.ObjectiveWeightsDto;
 import com.smartload.optimizer.dto.TruckDto;
 import com.smartload.optimizer.model.CandidateSolution;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class OptimizationEngine {
-	private final CompatibilityService compatibilityService;
+	@Autowired
+	private CompatibilityService compatibilityService;
 
-	public OptimizationEngine(CompatibilityService compatibilityService) {
-		this.compatibilityService = compatibilityService;
-	}
-
-	public CandidateSolution optimize(TruckDto truck, List<OrderDto> orders) {
+	public CandidateSolution optimize(TruckDto truck, List<OrderDto> orders, ObjectiveWeightsDto objectiveWeights) {
 		int n = orders.size();
 		if (n == 0) {
 			return new CandidateSolution(List.of(), 0, 0, 0);
@@ -77,7 +76,7 @@ public class OptimizationEngine {
 				continue;
 			}
 
-			if (isBetterCandidate(mask, bestMask, payout, weight, volume, orders, truck)) {
+			if (isBetterCandidate(mask, bestMask, payout, weight, volume, orders, truck, objectiveWeights)) {
 				bestMask = mask;
 			}
 		}
@@ -99,8 +98,17 @@ public class OptimizationEngine {
 			long[] weight,
 			long[] volume,
 			List<OrderDto> orders,
-			TruckDto truck
+			TruckDto truck,
+			ObjectiveWeightsDto objectiveWeights
 	) {
+		if (objectiveWeights != null) {
+			double candidateScore = weightedObjectiveScore(candidateMask, payout, weight, volume, truck, objectiveWeights);
+			double bestScore = weightedObjectiveScore(bestMask, payout, weight, volume, truck, objectiveWeights);
+			if (Double.compare(candidateScore, bestScore) != 0) {
+				return candidateScore > bestScore;
+			}
+		}
+
 		if (payout[candidateMask] != payout[bestMask]) {
 			return payout[candidateMask] > payout[bestMask];
 		}
@@ -118,6 +126,37 @@ public class OptimizationEngine {
 		}
 
 		return compareLexicographicIds(candidateMask, bestMask, orders) < 0;
+	}
+
+	private double weightedObjectiveScore(
+			int mask,
+			long[] payout,
+			long[] weight,
+			long[] volume,
+			TruckDto truck,
+			ObjectiveWeightsDto objectiveWeights
+	) {
+		double payoutRatio = payoutRatio(payout[mask], payout);
+		double weightUtilization = utilizationFraction(weight[mask], truck.maxWeightLbs());
+		double volumeUtilization = utilizationFraction(volume[mask], truck.maxVolumeCuft());
+		return objectiveWeights.payout() * payoutRatio
+				+ objectiveWeights.weightUtilization() * weightUtilization
+				+ objectiveWeights.volumeUtilization() * volumeUtilization;
+	}
+
+	private double payoutRatio(long value, long[] payout) {
+		long maxAvailablePayout = payout[payout.length - 1];
+		if (maxAvailablePayout <= 0) {
+			return 0.0;
+		}
+		return (double) value / maxAvailablePayout;
+	}
+
+	private double utilizationFraction(long used, long capacity) {
+		if (capacity <= 0) {
+			return 0.0;
+		}
+		return (double) used / capacity;
 	}
 
 	private long utilizationScore(long used, long capacity) {

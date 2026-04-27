@@ -9,24 +9,23 @@ import com.smartload.optimizer.validation.RequestValidator;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
 public class LoadOptimizerService {
-	private final RequestValidator requestValidator;
-	private final OptimizationEngine optimizationEngine;
+	@Autowired
+	private RequestValidator requestValidator;
 
-	public LoadOptimizerService(RequestValidator requestValidator, OptimizationEngine optimizationEngine) {
-		this.requestValidator = requestValidator;
-		this.optimizationEngine = optimizationEngine;
-	}
+	@Autowired
+	private OptimizationEngine optimizationEngine;
 
 	public OptimizeLoadResponse optimize(OptimizeLoadRequest request) {
 		requestValidator.validate(request);
 
 		TruckDto truck = request.truck();
 		List<OrderDto> orders = request.orders();
-		CandidateSolution candidate = optimizationEngine.optimize(truck, orders);
+		CandidateSolution candidate = optimizationEngine.optimize(truck, orders, request.objectiveWeights());
 
 		List<String> selectedOrderIds = candidate.selectedIndexes()
 				.stream()

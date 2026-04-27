@@ -2,6 +2,7 @@ package com.smartload.optimizer.validation;
 
 import com.smartload.optimizer.dto.OptimizeLoadRequest;
 import com.smartload.optimizer.dto.OrderDto;
+import com.smartload.optimizer.dto.ObjectiveWeightsDto;
 import com.smartload.optimizer.exception.BadRequestException;
 import com.smartload.optimizer.exception.PayloadTooLargeException;
 import java.util.HashSet;
@@ -27,6 +28,17 @@ public class RequestValidator {
 			if (order.pickupDate().isAfter(order.deliveryDate())) {
 				throw new BadRequestException("Order %s has pickup_date after delivery_date".formatted(order.id()));
 			}
+		}
+
+		validateObjectiveWeights(request.objectiveWeights());
+	}
+
+	private void validateObjectiveWeights(ObjectiveWeightsDto objectiveWeights) {
+		if (objectiveWeights == null) {
+			return;
+		}
+		if (objectiveWeights.sum() <= 0.0) {
+			throw new BadRequestException("objective_weights sum must be greater than 0");
 		}
 	}
 }

@@ -51,6 +51,24 @@ Tie-break order when payout is equal:
 2. Higher volume utilization
 3. Lexicographically smaller selected order IDs
 
+### Optional configurable objective weights
+
+You can optionally pass `objective_weights` to bias selection toward utilization:
+
+```json
+"objective_weights": {
+  "payout": 0.2,
+  "weight_utilization": 0.4,
+  "volume_utilization": 0.4
+}
+```
+
+Rules:
+
+- each weight must be `>= 0`
+- sum of all three must be `> 0`
+- if omitted, default behavior is payout-first optimization (original logic)
+
 ## API
 
 ### `POST /api/v1/load-optimizer/optimize`
@@ -76,7 +94,12 @@ Request body:
       "delivery_date": "2025-12-09",
       "is_hazmat": false
     }
-  ]
+  ],
+  "objective_weights": {
+    "payout": 0.6,
+    "weight_utilization": 0.2,
+    "volume_utilization": 0.2
+  }
 }
 ```
 

@@ -5,24 +5,20 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.smartload.optimizer.dto.OptimizeLoadRequest;
 import com.smartload.optimizer.dto.OptimizeLoadResponse;
+import com.smartload.optimizer.dto.ObjectiveWeightsDto;
 import com.smartload.optimizer.dto.OrderDto;
 import com.smartload.optimizer.dto.TruckDto;
 import com.smartload.optimizer.exception.BadRequestException;
-import com.smartload.optimizer.validation.RequestValidator;
 import java.time.LocalDate;
 import java.util.List;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 
+@SpringBootTest
 class LoadOptimizerServiceTest {
+	@Autowired
 	private LoadOptimizerService service;
-
-	@BeforeEach
-	void setUp() {
-		CompatibilityService compatibilityService = new CompatibilityService();
-		OptimizationEngine optimizationEngine = new OptimizationEngine(compatibilityService);
-		service = new LoadOptimizerService(new RequestValidator(), optimizationEngine);
-	}
 
 	@Test
 	void shouldSelectOptimalOrdersFromPromptExample() {
@@ -36,7 +32,7 @@ class LoadOptimizerServiceTest {
 						"2025-12-06", "2025-12-08", true)
 		);
 
-		OptimizeLoadResponse result = service.optimize(new OptimizeLoadRequest(truck, orders));
+		OptimizeLoadResponse result = service.optimize(new OptimizeLoadRequest(truck, orders, null));
 
 		assertEquals(List.of("ord-001", "ord-002"), result.selectedOrderIds());
 		assertEquals(430_000, result.totalPayoutCents());
@@ -55,7 +51,7 @@ class LoadOptimizerServiceTest {
 				order("ord-haz-2", 120_000, 10_000, 500, "A", "B", "2025-12-01", "2025-12-04", true)
 		);
 
-		OptimizeLoadResponse result = service.optimize(new OptimizeLoadRequest(truck, orders));
+		OptimizeLoadResponse result = service.optimize(new OptimizeLoadRequest(truck, orders, null));
 
 		assertEquals(List.of("ord-haz-1", "ord-haz-2"), result.selectedOrderIds());
 		assertEquals(230_000, result.totalPayoutCents());
@@ -68,7 +64,7 @@ class LoadOptimizerServiceTest {
 				order("ord-001", 100_000, 6_000, 400, "A", "B", "2025-12-01", "2025-12-02", false)
 		);
 
-		OptimizeLoadResponse result = service.optimize(new OptimizeLoadRequest(truck, orders));
+		OptimizeLoadResponse result = service.optimize(new OptimizeLoadRequest(truck, orders, null));
 
 		assertEquals(List.of(), result.selectedOrderIds());
 		assertEquals(0, result.totalPayoutCents());
@@ -81,7 +77,61 @@ class LoadOptimizerServiceTest {
 				order("ord-001", 100_000, 1_000, 100, "A", "B", "2025-12-06", "2025-12-01", false)
 		);
 
-		assertThrows(BadRequestException.class, () -> service.optimize(new OptimizeLoadRequest(truck, orders)));
+		assertThrows(BadRequestException.class, () -> service.optimize(new OptimizeLoadRequest(truck, orders, null)));
+	}
+
+	@Test
+	void shouldUseConfigurableObjectiveWeights() {
+		TruckDto truck = new TruckDto("truck-777", 100, 100);
+		List<OrderDto> orders = List.of(
+				order("high-payout-low-util", 100_000, 10, 10, "A", "B", "2025-12-01", "2025-12-02", false),
+				order("lower-payout-full-util", 95_000, 100, 100, "A", "B", "2025-12-01", "2025-12-02", false)
+		);
+		ObjectiveWeightsDto objectiveWeights = new ObjectiveWeightsDto(0.2, 0.4, 0.4);
+
+		OptimizeLoadResponse result = service.optimize(new OptimizeLoadRequest(truck, orders, objectiveWeights));
+
+		assertEquals(List.of("lower-payout-full-util"), result.selectedOrderIds());
+		assertEquals(95_000, result.totalPayoutCents());
+	}
+
+	@Test
+	void shouldRejectZeroSumObjectiveWeights() {
+		TruckDto truck = new TruckDto("truck-778", 100, 100);
+		List<OrderDto> orders = List.of(
+				order("ord-1", 100_000, 10, 10, "A", "B", "2025-12-01", "2025-12-02", false)
+		);
+		ObjectiveWeightsDto objectiveWeights = new ObjectiveWeightsDto(0.0, 0.0, 0.0);
+
+		assertThrows(BadRequestException.class, () -> service.optimize(new OptimizeLoadRequest(truck, orders, objectiveWeights)));
+	}
+
+	@Test
+	void shouldNotCombineOrdersWithTimeWindowConflict() {
+		TruckDto truck = new TruckDto("truck-time", 50_000, 5_000);
+		List<OrderDto> orders = List.of(
+				order("ord-a", 100_000, 5_000, 400, "A", "B", "2025-12-01", "2025-12-02", false),
+				order("ord-b", 120_000, 5_000, 400, "A", "B", "2025-12-05", "2025-12-06", false)
+		);
+
+		OptimizeLoadResponse result = service.optimize(new OptimizeLoadRequest(truck, orders, null));
+
+		assertEquals(List.of("ord-b"), result.selectedOrderIds());
+		assertEquals(120_000, result.totalPayoutCents());
+	}
+
+	@Test
+	void shouldNotCombineOrdersAcrossDifferentLanes() {
+		TruckDto truck = new TruckDto("truck-lane", 50_000, 5_000);
+		List<OrderDto> orders = List.of(
+				order("ord-a", 130_000, 5_000, 400, "A", "B", "2025-12-01", "2025-12-03", false),
+				order("ord-b", 140_000, 5_000, 400, "A", "C", "2025-12-01", "2025-12-03", false)
+		);
+
+		OptimizeLoadResponse result = service.optimize(new OptimizeLoadRequest(truck, orders, null));
+
+		assertEquals(List.of("ord-b"), result.selectedOrderIds());
+		assertEquals(140_000, result.totalPayoutCents());
 	}
 
 	private OrderDto order(
